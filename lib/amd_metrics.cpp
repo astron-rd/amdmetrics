@@ -42,6 +42,8 @@ std::map<uint64_t, rocprofiler_counter_config_id_t>
     g_configs;                                     // agent -> config
 std::unordered_map<uint64_t, std::string> g_cname; // counter id -> name
 std::unordered_map<uint64_t, size_t> g_pos;        // counter id -> request idx
+std::unordered_map<uint64_t, size_t>
+    g_rec_pos; // record cid -> idx (name-resolved)
 std::vector<std::string> g_requested;
 std::vector<rocprofiler_agent_v0_t> g_agents;
 
@@ -49,8 +51,12 @@ std::vector<rocprofiler_agent_v0_t> g_agents;
 std::mutex g_mutex;
 std::atomic<bool> g_measuring{false};
 std::set<uint64_t> g_measured; // dispatch ids in window
-std::vector<double> g_accum;   // per-request sums
+// per-dispatch pending values (window members only): disp_id -> pos -> sum.
+std::unordered_map<uint64_t, std::vector<double>> g_disp_acc;
+std::unordered_map<uint64_t, bool> g_disp_seen; // got >=1 value record
+std::vector<double> g_accum;                    // per-request sums
 std::atomic<uint64_t> g_drained{0};
+std::atomic<uint64_t> g_value_seq{0}; // bumped on every accumulated value
 
 static rocprofiler_context_id_t g_ctx{0};
 static rocprofiler_buffer_id_t g_buf{0};
@@ -151,15 +157,43 @@ static void buffered_cb(rocprofiler_context_id_t, rocprofiler_buffer_id_t,
       }
       if (!locksum)
         continue;
+      // Ensure a per-dispatch accumulator exists even if values precede
+      // position resolution.
+      {
+        std::lock_guard<std::mutex> lk(g_mutex);
+        auto &v = g_disp_acc[cur_disp];
+        if (v.empty())
+          v.assign(g_requested.size(), 0.0);
+      }
       rocprofiler_counter_id_t cid{0};
       if (rocprofiler_query_record_counter_id(r->id, &cid) !=
           ROCPROFILER_STATUS_SUCCESS)
         continue;
-      auto it = g_pos.find(cid.handle);
-      if (it == g_pos.end())
-        continue;
+      // The SDK stamps records with per-configuration counter instance ids
+      // which need not equal the ids our config-time enumeration returned
+      // (they differ e.g. when the library is loaded mid-process, as with a
+      // Python import). Resolve the record's counter by NAME against the
+      // window's requested names; cache the record cid -> position mapping.
       std::lock_guard<std::mutex> lk(g_mutex);
-      g_accum[it->second] += r->counter_value;
+      auto it = g_rec_pos.find(cid.handle);
+      if (it == g_rec_pos.end()) {
+        size_t pos = SIZE_MAX;
+        rocprofiler_counter_info_v0_t info;
+        if (rocprofiler_query_counter_info(
+                cid, ROCPROFILER_COUNTER_INFO_VERSION_0, &info) == 0 &&
+            info.name)
+          for (size_t k = 0; k < g_requested.size(); ++k)
+            if (g_requested[k] == info.name) {
+              pos = k;
+              break;
+            }
+        it = g_rec_pos.emplace(cid.handle, pos).first;
+      }
+      if (it->second != SIZE_MAX) {
+        g_disp_acc[cur_disp][it->second] += r->counter_value;
+        g_disp_seen[cur_disp] = true;
+        g_value_seq.fetch_add(1, std::memory_order_release);
+      }
     }
   }
   g_drained.fetch_add(1, std::memory_order_release);
@@ -354,6 +388,9 @@ int measure_start(const std::vector<std::string> &names,
     g_accum.assign(names.size(), 0.0);
     g_requested = names;
     g_measured.clear();
+    g_disp_acc.clear();
+    g_disp_seen.clear();
+    g_rec_pos.clear();
   }
   // per-agent configs: use each agent's own counter ids; an agent that does
   // not expose the requested counters (different arch) simply gets no config.
@@ -386,19 +423,47 @@ int measure_start(const std::vector<std::string> &names,
 int measure_end(std::vector<double> &out) {
   g_measuring.store(false, std::memory_order_release);
 
-  // drain: flush the buffer, wait for the callback to process the final batch.
-  uint64_t before = g_drained.load(std::memory_order_acquire);
-  rocprofiler_flush_buffer(g_buf);
-  for (int spins = 0; spins < 2000; ++spins) {
-    if (g_drained.load(std::memory_order_acquire) > before)
-      break;
-    usleep(1000); // up to ~2s
+  // Drain: the counting-service thread commits dispatch records
+  // asynchronously, so a single flush can race ahead of them. Keep flushing
+  // until every dispatch recorded in this window has produced values AND the
+  // record stream goes quiet (no new values for ~50ms): different counters
+  // for the same dispatch can land in separate buffer deliveries. Records
+  // that arrive after the window stays attributed by dispatch id, because
+  // g_measured is only cleared after this loop.
+  uint64_t quiet_since = 0;
+  int quiet_polls = 0;
+  for (int spins = 0; spins < 3000; ++spins) { // up to ~3s
+    rocprofiler_flush_buffer(g_buf);
+    usleep(1000);
+    uint64_t seq = g_value_seq.load(std::memory_order_acquire);
+    bool all_seen;
+    {
+      std::lock_guard<std::mutex> lk(g_mutex);
+      all_seen = true;
+      for (auto d : g_measured)
+        if (!g_disp_seen.count(d)) {
+          all_seen = false;
+          break;
+        }
+    }
+    if (seq != quiet_since) {
+      quiet_since = seq;
+      quiet_polls = 0;
+    } else if (all_seen) {
+      if (++quiet_polls >= 50) // 50ms with no new records
+        break;
+    }
   }
 
   std::lock_guard<std::mutex> lk(g_mutex);
-  out = g_accum;
+  out.assign(g_requested.size(), 0.0);
+  for (auto &kv : g_disp_acc)
+    for (size_t i = 0; i < out.size() && i < kv.second.size(); ++i)
+      out[i] += kv.second[i];
   g_accum.assign(g_accum.size(), 0.0);
   g_measured.clear();
+  g_disp_acc.clear();
+  g_disp_seen.clear();
   return 0;
 }
 

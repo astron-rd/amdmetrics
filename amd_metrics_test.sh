@@ -27,6 +27,6 @@ echo "=== RUN C++ DEMO ==="
 echo "demo exit: $?"
 
 echo "=== PYTHON DEMO ==="
-hipcc -O2 -fPIC -shared python/kernel_helper.cpp -o python/libkernels.so
+hipcc -O2 -fPIC -shared --offload-arch=gfx1101 --offload-arch=gfx1201 python/kernel_helper.cpp -o python/libkernels.so
 PYTHONPATH=$HOME/src/amd_metrics/build/python LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/llvm/lib:$HOME/src/amd_metrics/build/lib python3 python/demo.py
 echo "python exit: $?"
