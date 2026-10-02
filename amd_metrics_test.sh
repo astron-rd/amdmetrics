@@ -6,8 +6,9 @@
 set -u
 export ROCM_PATH=/opt/rocm-7.14.0
 export PATH=$ROCM_PATH/bin:$PATH
-export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/llvm/lib:$HOME/src/amd_metrics/build/lib:${LD_LIBRARY_PATH:-}
-cd ~/src/amd_metrics || exit 2
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR" || exit 2
+export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/llvm/lib:$SCRIPT_DIR/build/lib:${LD_LIBRARY_PATH:-}
 
 echo "=== ENV ==="
 hipcc --version 2>/dev/null | head -1
@@ -28,5 +29,5 @@ echo "demo exit: $?"
 
 echo "=== PYTHON DEMO ==="
 hipcc -O2 -fPIC -shared --offload-arch=gfx1101 --offload-arch=gfx1201 python/kernel_helper.cpp -o python/libkernels.so
-PYTHONPATH=$HOME/src/amd_metrics/build/python LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/llvm/lib:$HOME/src/amd_metrics/build/lib python3 python/demo.py
+PYTHONPATH=$SCRIPT_DIR/build/python LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/llvm/lib:$SCRIPT_DIR/build/lib python3 python/demo.py
 echo "python exit: $?"

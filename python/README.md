@@ -1,73 +1,41 @@
-# amd_metrics
+# Python bindings (`amdametrics`)
 
-Hardware-counter measurement for AMD GPUs, built on the ROCm **rocprofiler-sdk**
-(the AMD analog of `nv_metrics`, which uses CUPTI's range profiler). Target: the
-Radeon AI PRO **R9700** (gfx1201 / RDNA4) on the `gpu*` nodes, ROCm **7.14.0**
-at `/opt/rocm-7.14.0` (no environment module — PATH/LD_LIBRARY_PATH are set
-explicitly, see `amd_metrics_test.sh`).
+pybind11 module around `libamd_metrics` (see the top-level README for how the
+rocprofiler tool works). Importing the module does **not** initialise the
+profiler; the first API call self-initialises it, so it works whether the module
+is imported before or after HIP is up.
 
-The library is an in-process rocprofiler tool (`rocprofiler_configure` embedded
-in `libamd_metrics.so`), self-initialising on first use. It collects
-per-dispatch counter records through the SDK's **buffered dispatch-counting
-service** and sums each requested counter over every GPU dispatch that lands
-inside a measurement window. No `LD_PRELOAD`, no `rocprofv3` wrapper.
+## API
 
-## Layout
+```python
+import amdametrics
 
-```
-lib/        amd_metrics.h (public API) + amd_metrics.cpp (rocprofiler tool)
-python/     pyamdmetrics.cpp (pybind11 module "amdametrics") + demo.py +
-            kernel_helper.cpp (ctypes-launchable HIP kernel, the pycuda analog)
-demo/       demo.cpp — HIP fadd/fmul/fma kernel, query + measure end-to-end
-spike/      standalone spike_tool + main used to prove the pipeline (RP_WANT/NK)
-amd_metrics_test.sh   configure + build + run C++ demo + run Python demo
+info = amdametrics.query_counters()   # [{"name", "description", "is_derived"}, ...]
+
+vals = amdametrics.measure(["Wavefronts", "GPUBusy"])   # one-shot window
+
+amdametrics.measure_start(["Wavefronts", "SQ_WAVES", "GPUBusy", "GRBM_COUNT"])
+# ... launch kernels here (any path: torch, hip-python, ctypes, ...) ...
+vals = amdametrics.measure_end()      # one value per requested name, summed
 ```
 
-## Public API (`lib/amd_metrics.h`)
+`measure_end()` returns floats in request order, summed over every kernel
+dispatch that started inside the window (runtime-internal dispatches, e.g.
+`hipMalloc` fills, count too — subtract or ignore them if you need pure kernel
+numbers; they show up as e.g. GPUBusy=300 when three dispatches were counted).
 
-```cpp
-namespace amd_metrics {
-    struct CounterInfo { std::string name, description; bool is_derived; };
-    // queryMetrics analog: list the GPU's supported HW counters (143 on gfx1201)
-    int query_counters(std::vector<CounterInfo>& out);
-    // one-shot: measure `names` for kernels launched in this window
-    int measure(const std::vector<std::string>& names, std::vector<double>& vals);
-    // split window control (iterative / from Python around ctypes-launched kernels)
-    int measure_start(const std::vector<std::string>& names,
-                      std::vector<std::string>* missing = nullptr);
-    int measure_end(std::vector<double>& vals);   // one value per requested name
-} // namespace amd_metrics
-```
+## demo.py + kernel_helper.cpp
 
-Python: `import amdametrics; amdametrics.query_counters()`,
-`amdametrics.measure(["Wavefronts","SQ_WAVES","GPUBusy","GRBM_COUNT"])`, or
-`measure_start(names)` … `measure_end()`.
-
-## Build & run (on a gpu\* node, inside an srun allocation)
+`demo.py` measures a HIP kernel launched through `ctypes` (the pycuda analog):
 
 ```bash
-srun -p rbq -w gpu03 --gres=gpu:R9700:1 --time=01:30:00 -c8 -n1 \
-    bash -lc '~/src/amd_metrics/amd_metrics_test.sh'
+# on a gpu* node, after cmake --build (see top-level README)
+hipcc -O2 -fPIC -shared --offload-arch=gfx1101 --offload-arch=gfx1201 \
+    python/kernel_helper.cpp -o python/libkernels.so
+PYTHONPATH=<build-dir>/python python3 python/demo.py
 ```
 
-That configures (CMake, `pybind11` from the Spack `py-pybind11` module, HIP +
-rocprofiler-sdk from `$ROCM_PATH`), builds, runs the C++ demo and the Python
-demo. Example output:
-
-```
-gfx1201 (R9700) supports 143 HW counters
-Wavefronts        33288
-SQ_WAVES          33288
-GPUBusy           400
-GRBM_COUNT        711234
-```
-
-## Counter reality on gfx1201 (proven, important)
-
-Through the SDK dispatch-counting service this GPU only returns real values for
-the **wavefront / activity family**: `Wavefronts` (= launched_threads/32,
-exactly 32768 for a 1M-thread kernel), `SQ_WAVES`, `GPUBusy`, `GRBM_COUNT`.
-Per-opcode instruction counters (`SQ_INSTS_VALU/LDS/SALU`, `VALUInsts`,
-`SALUInsts`), occupancy and L2 (`GL2C_*`) read **0** even with 50 dispatches on
-RDNA4/gfx1201 — a hardware+SDK reality, not a bug, so the demos use the working
-set and `rocprofv3 -d 0 list --pmc` shows the full 143-counter inventory.
+`kernel_helper.cpp` must be compiled for **every GPU arch you want to measure**
+(`--offload-arch=...` per arch, see `amd_metrics_test.sh`). A single-arch build
+silently launches nothing on the other arch, which looks exactly like
+zero-valued counters.

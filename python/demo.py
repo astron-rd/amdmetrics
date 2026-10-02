@@ -8,23 +8,30 @@ import ctypes
 import os
 import sys
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# find the amdametrics extension in the repo's build dir when not installed
+# (setting PYTHONPATH overrides this)
+_build_py = os.path.join(_HERE, "..", "build", "python")
+if os.path.isdir(_build_py):
+    sys.path.insert(0, _build_py)
+
 import amdametrics
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-LIB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libkernels.so")
+LIB = os.path.join(_HERE, "libkernels.so")
 lib = ctypes.CDLL(LIB)
 lib.launch_mix.argtypes = [ctypes.c_int]
 lib.launch_mix.restype = ctypes.c_int
 
 print("== query_counters ==")
 info = amdametrics.query_counters()
-print("R9700 supports %d HW counters:" % len(info))
+print("GPU supports %d HW counters:" % len(info))
 for c in info[:8]:
     print(
         "  %-28s %s%s"
         % (c["name"], c["description"], "  [derived]" if c["is_derived"] else "")
     )
-print("  ... (%d more)" % (len(info) - 8))
+if len(info) > 8:
+    print("  ... (%d more)" % (len(info) - 8))
 
 names = ["Wavefronts", "SQ_WAVES", "SQ_BUSY_CYCLES", "GRBM_COUNT", "GPUBusy"]
 print("== measure ==")
