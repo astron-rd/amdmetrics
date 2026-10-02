@@ -267,10 +267,10 @@ static int tool_init(rocprofiler_client_finalize_t, void *) {
     fprintf(stderr, "[amd_metrics] no AMD GPU agent found\n");
     return -1;
   }
-  // GPUs are enumerated in board order; on multi-GPU nodes (gpu04 also carries
-  // a W7700/gfx1101) the first GPU may not be the R9700/gfx1201 we profile.
-  // Prefer the agent that names the R9700/gfx1201 explicitly, then fall back
-  // to the first GPU that supports the default counter set.
+  // GPUs are enumerated in board order; on multi-GPU systems the first GPU
+  // may not be the R9700/gfx1201 we profile. Prefer the agent that names the
+  // R9700/gfx1201 explicitly, then fall back to the first GPU that supports
+  // the default counter set.
   auto hasstr = [](const char *s, const char *needle) {
     return s && std::string(s).find(needle) != std::string::npos;
   };

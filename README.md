@@ -44,25 +44,26 @@ Python (see `python/README.md`):
 `amdametrics.measure(["Wavefronts","SQ_WAVES","GPUBusy","GRBM_COUNT"])`, or
 `measure_start(names)` … `measure_end()`.
 
-Requirements: CMake >= 3.20, a HIP-capable ROCm install (rocprofiler-sdk), and
-`pybind11` for the Python module. On our cluster ROCm lives in
-`/opt/rocm-7.14.0` with no environment module (PATH/LD_LIBRARY_PATH are set
-explicitly in `amd_metrics_test.sh`), and `pybind11` comes from the Spack module
-`py-pybind11`. Any stock ROCm >= 7.x with `find_package` support should work
-similarly; adjust `ROCM_PATH` in the script.
+Requirements: CMake >= 3.20, a HIP-capable ROCm install with rocprofiler-sdk (>=
+7.x, stock `/opt/rocm` installs work), and `pybind11` for the Python module.
 
-## Build & run (on a gpu\\\* node, inside an srun allocation)
+## Build & run
 
 ```bash
-srun -p rbq -w gpu03 --gres=gpu:R9700:1 --time=01:30:00 -c8 -n1 \
-    bash -lc "$HOME/src/amd_metrics/amd_metrics_test.sh"
+ROCM_PATH=/opt/rocm-7.14.0 ./amd_metrics_test.sh
 ```
 
-That configures (CMake, `pybind11` from the Spack `py-pybind11` module, HIP +
-rocprofiler-sdk from `$ROCM_PATH`), builds, runs the C++ demo and the Python
-demo (script is location-independent; the `srun` line above is cluster-specific
-— anywhere else just run `amd_metrics_test.sh` on a node with a GPU, or
-configure/build manually with CMake). Example output:
+That configures (CMake), builds, runs the C++ demo and the Python demo.
+`ROCM_PATH` defaults to `/opt/rocm-7.14.0`; point it at your ROCm install. Or
+drive CMake yourself:
+
+```bash
+cmake -S . -B build -DCMAKE_PREFIX_PATH=$ROCM_PATH -DROCM_PATH=$ROCM_PATH
+cmake --build build -j
+./build/demo/demo
+```
+
+Example output:
 
 ```
 device:        AMD Radeon AI PRO R9700 (32 CUs, wavefront size 32)
