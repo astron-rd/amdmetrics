@@ -1,7 +1,6 @@
-// pyamdmetrics.cpp — Python bindings for amd_metrics (mirrors nv_metrics'
-// pynvmetrics).
+// pyamdmetrics.cpp — Python bindings for amd_metrics.
 //
-// API mirrors the nv_metrics Python module:
+// API:
 //   query_counters()                -> list of
 //   {"name","description","is_derived"} measure(counters: list[str])    ->
 //   list[float]   (single measurement window) measure_start(...) /

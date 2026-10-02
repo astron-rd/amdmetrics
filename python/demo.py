@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""amd_metrics Python demo (mirrors nv_metrics' demo.py):
-   1. query the R9700's supported HW counters
+"""amd_metrics Python demo:
+   1. query the GPU's supported HW counters
    2. measure Wavefronts/SQ_WAVES/GPUBusy/GRBM_COUNT around a HIP kernel launched
       through kernel_helper.so (loaded with ctypes), three separate windows.
 """

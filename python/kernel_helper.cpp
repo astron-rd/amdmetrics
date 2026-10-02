@@ -1,7 +1,6 @@
 // kernel_helper.cpp — tiny HIP kernel launcher callable from Python via ctypes,
 // so the Python demo can measure a real kernel between
-// measure_start/measure_end (the amd_metrics analog of nv_metrics' pycuda
-// demo). Built separately with hipcc.
+// measure_start/measure_end. Built separately with hipcc.
 #include <hip/hip_runtime.h>
 
 #include <cstdio>

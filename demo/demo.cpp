@@ -1,4 +1,4 @@
-// demo.cpp — amd_metrics demo (mirrors nv_metrics' demo/main.cu):
+// demo.cpp — amd_metrics demo:
 //   1. query the GPU's supported HW counters
 //   2. run a float fadd/fmul/fma mix kernel and collect a useful counter set
 //      for every dispatch between measure_start()/measure_end().

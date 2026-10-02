@@ -1,9 +1,9 @@
 # amd_metrics
 
 Hardware-counter measurement for AMD GPUs, built on the ROCm **rocprofiler-sdk**
-(the AMD analog of `nv_metrics`, which uses CUPTI's range profiler). Developed
-and verified on the Radeon AI PRO **R9700** (gfx1201 / RDNA4) and **Radeon Pro
-W7700** (gfx1101) with ROCm **7.14.0**.
+(in-process profiling via its range-profiler / dispatch-counting service).
+Developed and verified on the Radeon AI PRO **R9700** (gfx1201 / RDNA4) and
+**Radeon Pro W7700** (gfx1101) with ROCm **7.14.0**.
 
 The library is an in-process rocprofiler tool (`rocprofiler_configure` embedded
 in `libamd_metrics.so`), self-initialising on first use. It collects
