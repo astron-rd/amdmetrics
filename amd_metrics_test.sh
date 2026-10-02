@@ -16,6 +16,7 @@ PYB=$(find /var/software/spack -name pybind11Config.cmake -path '*py-pybind11*' 
 echo "pybind11_cmake_dir=$(dirname "$PYB")"
 
 echo "=== CONFIGURE ==="
+mkdir -p build
 cmake -S . -B build -DCMAKE_PREFIX_PATH=$ROCM_PATH -Dpybind11_DIR="$(dirname "$PYB")" -DROCM_PATH=$ROCM_PATH -Wno-dev > build/cmake.log 2>&1
 echo "configure exit: $?"
 echo "=== BUILD ==="
