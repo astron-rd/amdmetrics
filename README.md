@@ -93,3 +93,7 @@ Note: when a measurement window contains more than one kernel dispatch
 (runtime-internal dispatches like `hipMalloc` fills count too), per-dispatch
 percentages like `GPUBusy` are summed, so values above 100 mean several
 dispatches were counted, not an error.
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE).
